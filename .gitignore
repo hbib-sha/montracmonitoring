@@ -7,3 +7,4 @@ client/dist/
 .env
 .env.local
 *.log
+prompt.txt
