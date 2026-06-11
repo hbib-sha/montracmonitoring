@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    @apply h-full w-full;
+  }
+  body {
+    @apply bg-surface text-ink font-sans antialiased;
+  }
+  /* Scrollbars */
+  ::-webkit-scrollbar       { @apply w-1.5; }
+  ::-webkit-scrollbar-track { @apply bg-surface; }
+  ::-webkit-scrollbar-thumb { @apply rounded-full bg-line-strong; }
+}
+
+@layer components {
+  /* ── Cards / containers ─────────────────────────────────────────────── */
+  .panel-card {
+    @apply bg-card border border-line rounded-xl p-4 shadow-card;
+  }
+
+  /* ── Buttons ────────────────────────────────────────────────────────── */
+  .btn-industrial {
+    @apply inline-flex items-center justify-center font-semibold uppercase
+           tracking-wider text-sm rounded-lg border-2 px-5 py-2.5
+           transition-all duration-150 active:scale-95
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn-industrial border-accent-blue text-accent-blue
+           hover:bg-accent-blue hover:text-white;
+  }
+  .btn-danger {
+    @apply btn-industrial border-accent-red text-accent-red
+           hover:bg-accent-red hover:text-white;
+  }
+  .btn-success {
+    @apply btn-industrial border-accent-green text-accent-green
+           hover:bg-accent-green hover:text-white;
+  }
+  .btn-warning {
+    @apply btn-industrial border-accent-yellow text-accent-yellow
+           hover:bg-accent-yellow hover:text-white;
+  }
+
+  /* ── Status dot ─────────────────────────────────────────────────────── */
+  .status-dot {
+    @apply inline-block h-2.5 w-2.5 rounded-full;
+  }
+
+  /* ── Form fields ────────────────────────────────────────────────────── */
+  .field-label {
+    @apply block text-xs font-semibold text-ink-muted uppercase tracking-wider mb-1;
+  }
+  .field-input {
+    @apply w-full rounded-lg border border-line bg-white px-3 py-2 text-sm
+           text-ink font-mono placeholder-ink-faint
+           focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-transparent
+           transition;
+  }
+}
