@@ -18,14 +18,14 @@ router.get('/', (_req, res) => {
 
 router.put('/:id', (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const parsed = TagSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
-    return;
-  }
   const existing = tagRepo.getById(id);
   if (!existing) {
     res.status(404).json({ error: 'Tag not found' });
+    return;
+  }
+  const parsed = TagSchema.partial().safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
     return;
   }
   tagRepo.upsert({ ...existing, ...parsed.data });
