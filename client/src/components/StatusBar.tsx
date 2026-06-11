@@ -43,7 +43,10 @@ export default function StatusBar() {
 
       {/* Tag check badge */}
       {badTags.length > 0 && (
-        <span className="flex items-center gap-1 text-accent-orange font-medium">
+        <span
+          className="flex items-center gap-1 text-accent-orange font-medium cursor-default"
+          title={badTags.map(([name]) => name).join('\n')}
+        >
           <span>⚠</span>
           <span>{badTags.length} tag(s) unreadable</span>
         </span>
