@@ -1,8 +1,10 @@
 import { useLiveState } from '../store/useLiveState';
 import { socket } from '../lib/socket';
+import { useAlarmSound } from '../hooks/useAlarmSound';
 
 export default function AlarmBanner() {
   const { alarm, system } = useLiveState();
+  useAlarmSound(alarm.state === 'active');
 
   if (alarm.state !== 'active') return null;
 
