@@ -62,8 +62,9 @@ export class Loop extends EventEmitter {
   tick(snapshot: Record<string, boolean | number | string>): void {
     this.checkpoints.forEach((cp, idx) => {
       cp.updateFromSnapshot(snapshot);
-      if (cp.arrivalEdge) this.handleArrival(cp, idx);
-      if (cp.goEdge)      this.handleGo(idx);
+      if (cp.idChangedEdge) this.handleIdChange(cp, idx);
+      if (cp.arrivalEdge)   this.handleArrival(cp, idx);
+      if (cp.goEdge)        this.handleGo(idx);
     });
   }
 
@@ -146,6 +147,35 @@ export class Loop extends EventEmitter {
 
   // ── Arrival handling ──────────────────────────────────────────────────────
 
+  /**
+   * Primary spawn path for IRM_ID checkpoints.
+   * Fires when the shuttle ID tag transitions to a new non-zero value,
+   * independent of the detect signal. This handles RS232 readers that update
+   * before DET clears, or readers that hold a stale value between passes.
+   */
+  private handleIdChange(cp: Checkpoint, idx: number): void {
+    if (cp.type !== 'IRM_ID') return;
+
+    const shuttleId = cp.rawShuttleId;
+    const allowed   = this.def.allowedShuttleIds;
+    if (allowed.length > 0 && !allowed.includes(shuttleId)) return;
+
+    const prevIdx = this.prevIndex(idx);
+    let shuttle   = this.shuttles.get(shuttleId);
+
+    if (!shuttle) {
+      shuttle = new VirtualShuttle(shuttleId, this.id, idx);
+      this.shuttles.set(shuttleId, shuttle);
+    } else if (shuttle.checkpointIndex === idx && shuttle.status === 'stopped') {
+      return; // already snapped here — nothing to do
+    }
+
+    this.crashDetector.confirmArrival(this.id, prevIdx, idx);
+    this.removeCrashSegment(prevIdx, idx);
+    shuttle.arriveAt(idx);
+    this.emit('shuttleUpdate', { loopId: this.id });
+  }
+
   private handleArrival(cp: Checkpoint, idx: number): void {
     const prevIdx = this.prevIndex(idx);
 
@@ -159,7 +189,6 @@ export class Loop extends EventEmitter {
 
       let shuttle = this.shuttles.get(shuttleId);
       if (!shuttle) {
-        // New shuttle entering the system
         shuttle = new VirtualShuttle(shuttleId, this.id, idx);
         this.shuttles.set(shuttleId, shuttle);
       }
@@ -167,7 +196,10 @@ export class Loop extends EventEmitter {
       // Confirm arrival — clear crash timer for prev→current segment
       this.crashDetector.confirmArrival(this.id, prevIdx, idx);
       this.removeCrashSegment(prevIdx, idx);
-      shuttle.arriveAt(idx);
+      // Skip arriveAt if handleIdChange already snapped the shuttle here this tick
+      if (shuttle.checkpointIndex !== idx || shuttle.status !== 'stopped') {
+        shuttle.arriveAt(idx);
+      }
       this.emit('shuttleUpdate', { loopId: this.id });
 
     } else if (cp.type === 'IRM') {

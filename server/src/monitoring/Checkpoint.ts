@@ -2,11 +2,14 @@
  * Checkpoint — maintains the live I/O state of one physical checkpoint.
  * The monitoring engine reads tags each tick and calls updateFromSnapshot().
  *
- * Key design change (vs original):
- *  - IRM_ID uses an "armed" model: `armed = det && id > 0`. This is order-
- *    independent — setting IR3_AR_DET before RS232_1_BYTE2 (or vice-versa)
- *    both result in the same arrival edge once both are true. The old rising-
- *    edge-on-`detecting` model broke when DET was set before the ID value.
+ * Key design notes:
+ *  - IRM_ID uses two independent spawn mechanisms:
+ *      1. `arrivalEdge` (armed model): fires when `det && id > 0` — requires
+ *         both signals simultaneously.
+ *      2. `idChangedEdge`: fires when `rawShuttleId` transitions to a new
+ *         non-zero value, independent of `det`. This is the primary spawn
+ *         trigger; the det signal is used only for GO handling. Guarded
+ *         against stale RS232 values by firing on *change*, not mere presence.
  *  - GO is now read back (direction 'readwrite'). When the PLC (or simulated
  *    user) sets the GO output true, the Loop reads the rising edge and
  *    departs the waiting shuttle. The engine does not "own" GO anymore.
@@ -18,15 +21,18 @@ export class Checkpoint {
   // ── Live state ─────────────────────────────────────────────────────────
   public detecting = false;
   public detectedShuttleId?: number;
+  public rawShuttleId = 0;   // IRM_ID only: raw ID value regardless of det
   public goSignalActive = false;
 
   // Edge flags — set by updateFromSnapshot(), consumed once by Loop.tick()
-  public arrivalEdge = false;
-  public goEdge      = false;
+  public arrivalEdge    = false;
+  public idChangedEdge  = false; // IRM_ID: rawShuttleId changed to a non-zero value
+  public goEdge         = false;
 
   // Previous-tick state for edge detection
-  private prevArmed = false;
-  private prevGo    = false;
+  private prevArmed  = false;
+  private prevGo     = false;
+  private prevRawId  = 0;
 
   constructor(public readonly def: CheckpointDef) {}
 
@@ -84,7 +90,12 @@ export class Checkpoint {
       const det   = this.detNodeId ? Boolean(snapshot[this.detNodeId]) : false;
       const rawId = this.idNodeId  ? Number(snapshot[this.idNodeId])   : 0;
       this.detecting         = det;
+      this.rawShuttleId      = rawId;
       this.detectedShuttleId = det && rawId > 0 ? rawId : undefined;
+      // ID-changed edge: rawId transitioned to a new non-zero value (change guard
+      // prevents re-firing on stale RS232 values that linger after departure)
+      this.idChangedEdge = rawId > 0 && rawId !== this.prevRawId;
+      this.prevRawId     = rawId;
       // Armed when BOTH det is true AND a valid ID is present — order-independent
       armed = det && rawId > 0;
 
@@ -119,10 +130,13 @@ export class Checkpoint {
 
   /** Reset edge-detection state so the next tick starts fresh. */
   resetEdgeState(): void {
-    this.prevArmed   = false;
-    this.prevGo      = false;
-    this.arrivalEdge = false;
-    this.goEdge      = false;
+    this.prevArmed      = false;
+    this.prevGo         = false;
+    this.prevRawId      = 0;
+    this.rawShuttleId   = 0;
+    this.arrivalEdge    = false;
+    this.idChangedEdge  = false;
+    this.goEdge         = false;
   }
 
   toState(): CheckpointState {
