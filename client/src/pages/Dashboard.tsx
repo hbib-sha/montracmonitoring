@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/useAuth';
 import { useLiveState } from '../store/useLiveState';
+import { useSettings } from '../store/useSettings';
 import StatusBar from '../components/StatusBar';
 import AlarmBanner from '../components/AlarmBanner';
 import ArenaOverride from '../components/ArenaOverride';
@@ -12,8 +13,13 @@ import SimulationDialog from '../components/SimulationDialog';
 export default function DashboardPage() {
   const { username, logout } = useAuth();
   const { system }           = useLiveState();
+  const { fetch: fetchSettings } = useSettings();
   const navigate             = useNavigate();
   const [simOpen, setSimOpen] = useState(false);
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
 
   const handleLogout = async () => {
     await logout();

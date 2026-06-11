@@ -16,14 +16,20 @@ export default function ArenaOverride({ loopId, loopName }: Props) {
   const getNodeId = (logicalName: string): string =>
     tags.find((t) => t.logicalName === logicalName)?.nodeId ?? '';
 
+  const luId = getNodeId('LU_ARENA');
+  const stId = getNodeId('ST_ARENA');
+  const ruId = getNodeId('RU_ARENA');
+  const configured = luId !== '' && stId !== '' && ruId !== '';
+
   const send = (direction: Direction) => {
+    if (!configured) return;
     setActive(direction);
     socket.emit('arenaOverride', {
       loopId,
       direction,
-      lu_node_id: getNodeId('LU_ARENA'),
-      st_node_id: getNodeId('ST_ARENA'),
-      ru_node_id: getNodeId('RU_ARENA'),
+      lu_node_id: luId,
+      st_node_id: stId,
+      ru_node_id: ruId,
     });
     setTimeout(() => setActive(null), 1500);
   };
@@ -31,11 +37,18 @@ export default function ArenaOverride({ loopId, loopName }: Props) {
   return (
     <div className="panel-card space-y-3">
       <p className="text-xs text-ink-muted font-medium">{loopName}</p>
+      {!configured && (
+        <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+          Arena tags not configured — set LU_ARENA / ST_ARENA / RU_ARENA node IDs in Settings.
+        </p>
+      )}
+
       <div className="grid grid-cols-3 gap-2">
         {/* Left */}
         <button
           onClick={() => send('left')}
-          className={`flex flex-col items-center gap-1 rounded-lg border-2 px-2 py-3 text-xs font-bold tracking-widest uppercase transition-all active:scale-95 ${
+          disabled={!configured}
+          className={`flex flex-col items-center gap-1 rounded-lg border-2 px-2 py-3 text-xs font-bold tracking-widest uppercase transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed ${
             active === 'left'
               ? 'border-red-500 bg-red-500 text-white'
               : 'border-red-300 text-red-600 hover:border-red-500 hover:bg-red-50'
@@ -48,7 +61,8 @@ export default function ArenaOverride({ loopId, loopName }: Props) {
         {/* Straight */}
         <button
           onClick={() => send('straight')}
-          className={`flex flex-col items-center gap-1 rounded-lg border-2 px-2 py-3 text-xs font-bold tracking-widest uppercase transition-all active:scale-95 ${
+          disabled={!configured}
+          className={`flex flex-col items-center gap-1 rounded-lg border-2 px-2 py-3 text-xs font-bold tracking-widest uppercase transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed ${
             active === 'straight'
               ? 'border-blue-500 bg-blue-500 text-white'
               : 'border-blue-300 text-blue-600 hover:border-blue-500 hover:bg-blue-50'
@@ -61,7 +75,8 @@ export default function ArenaOverride({ loopId, loopName }: Props) {
         {/* Right */}
         <button
           onClick={() => send('right')}
-          className={`flex flex-col items-center gap-1 rounded-lg border-2 px-2 py-3 text-xs font-bold tracking-widest uppercase transition-all active:scale-95 ${
+          disabled={!configured}
+          className={`flex flex-col items-center gap-1 rounded-lg border-2 px-2 py-3 text-xs font-bold tracking-widest uppercase transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed ${
             active === 'right'
               ? 'border-green-500 bg-green-500 text-white'
               : 'border-green-300 text-green-600 hover:border-green-500 hover:bg-green-50'

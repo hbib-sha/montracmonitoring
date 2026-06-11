@@ -94,6 +94,10 @@ export function createGateway(
     // ── Arena override ────────────────────────────────────────────────────
     socket.on('arenaOverride', async (payload) => {
       const { direction, lu_node_id, st_node_id, ru_node_id } = payload;
+      if (!lu_node_id || !st_node_id || !ru_node_id) {
+        logger.warn({ payload }, 'arenaOverride: missing node IDs — ignoring');
+        return;
+      }
       const lu = direction === 'left';
       const st = direction === 'straight';
       const ru = direction === 'right';
