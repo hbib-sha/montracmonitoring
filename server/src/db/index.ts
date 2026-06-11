@@ -115,4 +115,51 @@ function seedDefaultsIfEmpty(): void {
     cpInsert.run(loopId, 2, 'CP3 — Robot Station IRM', 'IRM', 5000, 10000,
       getTag('IR2_PU4_DET'), null, getTag('IR2_PU4_GO'), null);
   }
+
+  // ── Loop 2 ─────────────────────────────────────────────────────────────
+  const loopCount2 = (
+    db.prepare('SELECT COUNT(*) AS c FROM loops').get() as { c: number }
+  ).c;
+
+  if (loopCount2 < 2) {
+    const tagInsert2 = db.prepare(
+      `INSERT OR IGNORE INTO tags (logical_name, node_id, data_type, direction, description)
+       VALUES (?, ?, ?, ?, ?)`,
+    );
+    const ns2 = 'ns=7;s=S71500ET200MP station_1.Conveyor_ctrl.';
+
+    // CP1 — Arena IRM_ID (IR4 side)
+    tagInsert2.run('IR4_AR_DET',    ns2 + 'IR4_AR_DET',    'Boolean', 'read',      'L2 CP1 IRM detect');
+    tagInsert2.run('RS232_2_BYTE2', ns2 + 'RS232_2.BYTE2', 'Int32',   'read',      'L2 CP1 shuttle ID reader');
+    tagInsert2.run('IR4_AR_GO',     ns2 + 'IR4_AR_GO',     'Boolean', 'readwrite', 'L2 CP1 IRM go signal');
+    // CP2 — Arena sensor
+    tagInsert2.run('L2_ARENA2_SIGNOFF', ns2 + 'L2_ARENA2_SIGNOFF', 'Boolean', 'read', 'L2 CP2 positioning sensor');
+    // CP3 — Robot station IRM (IR2 side)
+    tagInsert2.run('L2_IR2_PU4_DET', ns2 + 'L2_IR2_PU4_DET', 'Boolean', 'read',      'L2 CP3 IRM detect');
+    tagInsert2.run('L2_IR2_PU4_GO',  ns2 + 'L2_IR2_PU4_GO',  'Boolean', 'readwrite', 'L2 CP3 IRM go signal');
+    // Arena tags are shared (LU_ARENA / ST_ARENA / RU_ARENA) — no per-loop arena tags needed
+
+    const getTag2 = (name: string): number =>
+      (db.prepare('SELECT id FROM tags WHERE logical_name = ?').get(name) as { id: number }).id;
+
+    db.prepare(
+      'INSERT INTO loops (name, description, allowed_shuttle_ids) VALUES (?, ?, ?)',
+    ).run('Loop 2', 'Second production loop with 3 checkpoints', '[3]');
+    const loop2Id = (
+      db.prepare('SELECT id FROM loops WHERE name = ?').get('Loop 2') as { id: number }
+    ).id;
+
+    const cpInsert2 = db.prepare(
+      `INSERT INTO checkpoints
+         (loop_id, sequence, name, type, distance_mm_to_next, buffer_ms,
+          det_tag_id, id_tag_id, go_tag_id, signoff_tag_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    cpInsert2.run(loop2Id, 0, 'CP1 — Arena IRM (ID)', 'IRM_ID', 5000, 10000,
+      getTag2('IR4_AR_DET'), getTag2('RS232_2_BYTE2'), getTag2('IR4_AR_GO'), null);
+    cpInsert2.run(loop2Id, 1, 'CP2 — Arena Sensor', 'SENSOR', 5000, 10000,
+      null, null, null, getTag2('L2_ARENA2_SIGNOFF'));
+    cpInsert2.run(loop2Id, 2, 'CP3 — Robot Station IRM', 'IRM', 5000, 10000,
+      getTag2('L2_IR2_PU4_DET'), null, getTag2('L2_IR2_PU4_GO'), null);
+  }
 }

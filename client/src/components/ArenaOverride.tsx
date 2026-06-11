@@ -2,14 +2,9 @@ import { useState } from 'react';
 import { socket } from '../lib/socket';
 import { useSettings } from '../store/useSettings';
 
-interface Props {
-  loopId: number;
-  loopName: string;
-}
-
 type Direction = 'left' | 'straight' | 'right';
 
-export default function ArenaOverride({ loopId, loopName }: Props) {
+export default function ArenaOverride() {
   const [active, setActive] = useState<Direction | null>(null);
   const { tags }            = useSettings();
 
@@ -25,7 +20,7 @@ export default function ArenaOverride({ loopId, loopName }: Props) {
     if (!configured) return;
     setActive(direction);
     socket.emit('arenaOverride', {
-      loopId,
+      loopId: 0,
       direction,
       lu_node_id: luId,
       st_node_id: stId,
@@ -36,7 +31,6 @@ export default function ArenaOverride({ loopId, loopName }: Props) {
 
   return (
     <div className="panel-card space-y-3">
-      <p className="text-xs text-ink-muted font-medium">{loopName}</p>
       {!configured && (
         <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
           Arena tags not configured — set LU_ARENA / ST_ARENA / RU_ARENA node IDs in Settings.

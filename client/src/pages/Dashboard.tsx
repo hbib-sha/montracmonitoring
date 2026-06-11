@@ -104,14 +104,12 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Arena override */}
+          {/* Arena override — one shared arena for all loops */}
           <div>
             <h2 className="text-xs font-semibold tracking-widest uppercase text-slate-400 mb-3">
               Arena Override
             </h2>
-            {system?.loops.map((loop) => (
-              <ArenaOverride key={loop.id} loopId={loop.id} loopName={loop.name} />
-            ))}
+            <ArenaOverride />
           </div>
         </section>
       </main>
