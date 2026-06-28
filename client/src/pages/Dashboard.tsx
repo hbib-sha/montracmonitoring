@@ -7,8 +7,10 @@ import StatusBar from '../components/StatusBar';
 import AlarmBanner from '../components/AlarmBanner';
 import ArenaOverride from '../components/ArenaOverride';
 import LoopVisualizer from '../components/LoopVisualizer';
+import CombinedTrackCanvas from '../components/CombinedTrackCanvas';
 import CheckpointCard from '../components/CheckpointCard';
 import SimulationDialog from '../components/SimulationDialog';
+import { loopGeometry, validateLoopGeo } from '../loopGeometry';
 
 export default function DashboardPage() {
   const { username, logout } = useAuth();
@@ -48,6 +50,13 @@ export default function DashboardPage() {
             </button>
           )}
           <button
+            onClick={() => navigate('/geometry')}
+            className="rounded border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 hover:border-slate-300 hover:bg-slate-50 transition-colors"
+            title="Author real-shape loop geometry for the circuit view"
+          >
+            Circuit Editor
+          </button>
+          <button
             onClick={() => navigate('/settings')}
             className="rounded border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors"
           >
@@ -68,6 +77,19 @@ export default function DashboardPage() {
 
       {/* Main content */}
       <main className="flex-1 overflow-auto p-4 space-y-5">
+        {/* Overall Circuit — shown only when at least one loop has authored geometry */}
+        {system?.loops.some((l) => {
+          const geo = loopGeometry[l.id];
+          return geo && validateLoopGeo(geo, l.checkpoints.length, l.id);
+        }) && (
+          <section>
+            <h2 className="text-xs font-semibold tracking-widest uppercase text-slate-400 mb-3">
+              Overall Circuit
+            </h2>
+            <CombinedTrackCanvas loops={system.loops} />
+          </section>
+        )}
+
         {/* Row 1: Loop visualizers */}
         <section>
           <h2 className="text-xs font-semibold tracking-widest uppercase text-slate-400 mb-3">

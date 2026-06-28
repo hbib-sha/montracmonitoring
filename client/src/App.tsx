@@ -4,6 +4,7 @@ import { useAuth } from './store/useAuth';
 import LoginPage from './pages/Login';
 import DashboardPage from './pages/Dashboard';
 import SettingsPage from './pages/Settings';
+import GeometryEditorPage from './pages/GeometryEditor';
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { username, loading } = useAuth();
@@ -42,6 +43,14 @@ export default function App() {
           element={
             <AuthGuard>
               <SettingsPage />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/geometry"
+          element={
+            <AuthGuard>
+              <GeometryEditorPage />
             </AuthGuard>
           }
         />
