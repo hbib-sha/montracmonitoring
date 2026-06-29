@@ -12,7 +12,7 @@
  *    so they don't remain stuck as "moving".
  */
 import { EventEmitter } from 'events';
-import type { LoopDef, LoopState, SegmentCrash } from '../types';
+import type { LoopDef, LoopState, SegmentCrash, ShuttleAdvancedPayload } from '../types';
 import { Checkpoint } from './Checkpoint';
 import { VirtualShuttle } from './VirtualShuttle';
 import { CrashDetector, type CrashPayload } from './crashDetection';
@@ -24,6 +24,7 @@ export interface ShuttleUpdatePayload {
 export declare interface Loop {
   on(event: 'crash', listener: (payload: CrashPayload) => void): this;
   on(event: 'shuttleUpdate', listener: (payload: ShuttleUpdatePayload) => void): this;
+  on(event: 'shuttleAdvanced', listener: (payload: ShuttleAdvancedPayload) => void): this;
 }
 
 export class Loop extends EventEmitter {
@@ -170,6 +171,18 @@ export class Loop extends EventEmitter {
       return; // already snapped here — nothing to do
     }
 
+    // Emit timing data if the shuttle was moving toward this checkpoint
+    if (shuttle.status === 'moving' && shuttle.movedAtMs != null && shuttle.etaMs != null) {
+      this.emit('shuttleAdvanced', {
+        loopId:          this.id,
+        shuttleId:       shuttle.id,
+        fromIndex:       shuttle.checkpointIndex,
+        toIndex:         idx,
+        predictedEtaMs:  shuttle.etaMs,
+        actualElapsedMs: Date.now() - shuttle.movedAtMs,
+      });
+    }
+
     this.crashDetector.confirmArrival(this.id, prevIdx, idx);
     this.removeCrashSegment(prevIdx, idx);
     shuttle.arriveAt(idx);
@@ -209,6 +222,17 @@ export class Loop extends EventEmitter {
       // acknowledge, or when the real shuttle arrived before the virtual one).
       const shuttle = this.popExpectedShuttle(idx) ?? this.findAnyShuttleInLoop();
       if (shuttle) {
+        // Emit timing data if the shuttle was moving toward this checkpoint
+        if (shuttle.status === 'moving' && shuttle.movedAtMs != null && shuttle.etaMs != null) {
+          this.emit('shuttleAdvanced', {
+            loopId:          this.id,
+            shuttleId:       shuttle.id,
+            fromIndex:       shuttle.checkpointIndex,
+            toIndex:         idx,
+            predictedEtaMs:  shuttle.etaMs,
+            actualElapsedMs: Date.now() - shuttle.movedAtMs,
+          });
+        }
         this.crashDetector.confirmArrival(this.id, prevIdx, idx);
         this.removeCrashSegment(prevIdx, idx);
         shuttle.arriveAt(idx);
@@ -222,6 +246,17 @@ export class Loop extends EventEmitter {
       // Advance the moving shuttle (SENSOR checkpoints don't stop the shuttle)
       const shuttle = this.findMovingShuttleFor(prevIdx);
       if (shuttle) {
+        // Emit timing data for the prev→SENSOR segment
+        if (shuttle.movedAtMs != null && shuttle.etaMs != null) {
+          this.emit('shuttleAdvanced', {
+            loopId:          this.id,
+            shuttleId:       shuttle.id,
+            fromIndex:       prevIdx,
+            toIndex:         idx,
+            predictedEtaMs:  shuttle.etaMs,
+            actualElapsedMs: Date.now() - shuttle.movedAtMs,
+          });
+        }
         const nextIdx = this.nextIndex(idx);
         shuttle.checkpointIndex = idx;
         shuttle.depart(this.etaMs(idx));

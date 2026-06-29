@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/useAuth';
 import { useLiveState } from '../store/useLiveState';
+
 import { useSettings } from '../store/useSettings';
 import StatusBar from '../components/StatusBar';
 import AlarmBanner from '../components/AlarmBanner';
@@ -14,7 +15,7 @@ import { loopGeometry, validateLoopGeo } from '../loopGeometry';
 
 export default function DashboardPage() {
   const { username, logout } = useAuth();
-  const { system }           = useLiveState();
+  const { system, recordingStatus } = useLiveState();
   const { fetch: fetchSettings } = useSettings();
   const navigate             = useNavigate();
   const [simOpen, setSimOpen] = useState(false);
@@ -49,6 +50,15 @@ export default function DashboardPage() {
               Sim Panel
             </button>
           )}
+          <button
+            onClick={() => navigate('/reports')}
+            className="flex items-center gap-1.5 rounded border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors"
+          >
+            {recordingStatus.active && (
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+            )}
+            Reports
+          </button>
           <button
             onClick={() => navigate('/geometry')}
             className="rounded border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 hover:border-slate-300 hover:bg-slate-50 transition-colors"

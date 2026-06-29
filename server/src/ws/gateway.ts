@@ -16,6 +16,7 @@ import type { PlcDriver } from '../opc/PlcDriver';
 import { SimulatedDriver } from '../opc/SimulatedDriver';
 import { tagRegistry } from '../opc/tagRegistry';
 import { eventRepo } from '../db/repositories/eventRepo';
+import type { RecordingService } from '../recording/RecordingService';
 import type { SystemState, PlcMode } from '../types';
 import pino from 'pino';
 
@@ -36,7 +37,8 @@ export function createGateway(
   getMode: () => PlcMode,
   isConnected: () => boolean,
   tagCheckResults: () => Record<string, boolean>,
-): IoType {
+  recordingService: RecordingService,
+): { io: IoType; broadcastRecordingStatus: () => void } {
   const io: IoType = new IoServer(httpServer, {
     cors: { origin: '*', methods: ['GET', 'POST'] },
   });
@@ -60,13 +62,22 @@ export function createGateway(
     io.emit('alarmUpdate', alarmManager.getState());
   }
 
+  function broadcastRecordingStatus(): void {
+    io.emit('recordingStatus', recordingService.getStatus());
+  }
+
   // ── Engine / alarm event wiring ─────────────────────────────────────────
   engine.on('stateChanged', broadcastState);
 
   engine.on('crash', (payload) => {
     alarmManager.onCrash(payload);
-    eventRepo.create(payload.loopId, payload.fromIndex, payload.toIndex);
+    const eventId = eventRepo.create(payload.loopId, payload.fromIndex, payload.toIndex);
+    recordingService.onCrashDetected(payload.loopId, eventId);
     broadcastState();
+  });
+
+  engine.on('shuttleAdvanced', (payload) => {
+    recordingService.onShuttleAdvanced(payload);
   });
 
   alarmManager.on('alarmChanged', () => {
@@ -87,6 +98,7 @@ export function createGateway(
 
     // Send full state immediately
     socket.emit('systemState', buildSystemState());
+    socket.emit('recordingStatus', recordingService.getStatus());
     if (driver instanceof SimulatedDriver) {
       socket.emit('simTags', driver.getAll());
     }
@@ -151,5 +163,5 @@ export function createGateway(
     });
   });
 
-  return io;
+  return { io, broadcastRecordingStatus };
 }

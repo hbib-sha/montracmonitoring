@@ -61,5 +61,57 @@ CREATE TABLE IF NOT EXISTS events (
   segment_to      INTEGER NOT NULL,
   created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   resolved_at     TEXT,
-  acknowledged    INTEGER NOT NULL DEFAULT 0
+  acknowledged    INTEGER NOT NULL DEFAULT 0,
+  run_id          INTEGER REFERENCES recording_runs(id)
+);
+
+-- ── Recording Runs ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS recording_runs (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  name                TEXT    NOT NULL,
+  started_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+  ended_at            TEXT,
+  status              TEXT    NOT NULL DEFAULT 'recording',  -- recording | stopped
+  mode                TEXT    NOT NULL DEFAULT 'simulation', -- real | simulation
+  sample_interval_ms  INTEGER NOT NULL DEFAULT 1000,
+  notes               TEXT    NOT NULL DEFAULT ''
+);
+
+-- ── Recording Samples (1/s snapshots) ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS recording_samples (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id                INTEGER NOT NULL REFERENCES recording_runs(id) ON DELETE CASCADE,
+  t                     INTEGER NOT NULL,  -- epoch ms
+  connected             INTEGER NOT NULL DEFAULT 0,
+  mode                  TEXT    NOT NULL DEFAULT 'simulation',
+  active_shuttle_count  INTEGER NOT NULL DEFAULT 0,
+  crashed_count         INTEGER NOT NULL DEFAULT 0,
+  snapshot_json         TEXT    NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_samples_run_t ON recording_samples(run_id, t);
+
+-- ── Segment Timings (ETA accuracy per shuttle transit) ────────────────────────
+CREATE TABLE IF NOT EXISTS segment_timings (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id            INTEGER NOT NULL REFERENCES recording_runs(id) ON DELETE CASCADE,
+  loop_id           INTEGER NOT NULL,
+  shuttle_id        INTEGER NOT NULL,
+  from_index        INTEGER NOT NULL,
+  to_index          INTEGER NOT NULL,
+  predicted_eta_ms  INTEGER NOT NULL,
+  actual_elapsed_ms INTEGER NOT NULL,
+  recorded_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+-- ── Crash Markers (ground-truth vs detected latency) ─────────────────────────
+CREATE TABLE IF NOT EXISTS crash_markers (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id                INTEGER NOT NULL REFERENCES recording_runs(id) ON DELETE CASCADE,
+  loop_id               INTEGER NOT NULL,
+  actual_crash_at_ms    INTEGER NOT NULL,  -- epoch ms user provided
+  detected_event_id     INTEGER REFERENCES events(id),
+  detected_at_ms        INTEGER,           -- epoch ms of detected crash
+  detection_latency_ms  INTEGER,           -- detected_at_ms - actual_crash_at_ms
+  note                  TEXT    NOT NULL DEFAULT '',
+  created_at            TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );

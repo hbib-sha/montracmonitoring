@@ -29,6 +29,16 @@ export function initDb(): void {
     db.exec("ALTER TABLE loops ADD COLUMN allowed_shuttle_ids TEXT NOT NULL DEFAULT '[]'");
   } catch { /* column already exists — ignore */ }
 
+  // Add run_id to events if this is an existing DB that pre-dates the recording feature
+  try {
+    db.exec('ALTER TABLE events ADD COLUMN run_id INTEGER REFERENCES recording_runs(id)');
+  } catch { /* column already exists — ignore */ }
+
+  // Mark any dangling 'recording' runs as stopped (server crashed mid-run)
+  try {
+    db.exec("UPDATE recording_runs SET status='stopped', ended_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE status='recording'");
+  } catch { /* ignore */ }
+
   // Reclassify GO tags as 'readwrite' so the engine polls them (reads the PLC GO signal)
   try {
     db.exec("UPDATE tags SET direction='readwrite' WHERE logical_name IN ('IR3_AR_GO','IR2_PU4_GO')");
@@ -161,5 +171,63 @@ function seedDefaultsIfEmpty(): void {
       null, null, null, getTag2('L2_ARENA2_SIGNOFF'));
     cpInsert2.run(loop2Id, 2, 'CP3 — Robot Station IRM', 'IRM', 5000, 10000,
       getTag2('L2_IR2_PU4_DET'), null, getTag2('L2_IR2_PU4_GO'), null);
+  }
+
+  // ── Loop 3 ─── crossover loop; OWN tags duplicate L1/L2 sensor addresses ─────
+  const loopCount3 = (
+    db.prepare('SELECT COUNT(*) AS c FROM loops').get() as { c: number }
+  ).c;
+
+  if (loopCount3 < 3) {
+    // Read an existing tag's node_id so the L3 duplicates point at the same address.
+    const getNode = (name: string): string =>
+      (db.prepare('SELECT node_id FROM tags WHERE logical_name = ?').get(name) as { node_id: string }).node_id;
+
+    // Duplicate tag rows: new logical_name, SAME node_id (address) as the original.
+    const tagInsert3 = db.prepare(
+      `INSERT OR IGNORE INTO tags (logical_name, node_id, data_type, direction, description)
+       VALUES (?, ?, ?, ?, ?)`,
+    );
+    // seq 0 — duplicates Loop 1 CP1 (IRM_ID)
+    tagInsert3.run('L3_IR3_AR_DET',    getNode('IR3_AR_DET'),    'Boolean', 'read',      'L3 CP1 IRM detect (addr shared w/ L1 CP1)');
+    tagInsert3.run('L3_RS232_1_BYTE2', getNode('RS232_1_BYTE2'), 'Int32',   'read',      'L3 CP1 shuttle ID reader (addr shared w/ L1 CP1)');
+    tagInsert3.run('L3_IR3_AR_GO',     getNode('IR3_AR_GO'),     'Boolean', 'readwrite', 'L3 CP1 IRM go signal (addr shared w/ L1 CP1)');
+    // seq 1 — duplicates Loop 2 CP2 (SENSOR)
+    tagInsert3.run('L3_L2_ARENA2_SIGNOFF', getNode('L2_ARENA2_SIGNOFF'), 'Boolean', 'read', 'L3 CP2 positioning sensor (addr shared w/ L2 CP2)');
+    // seq 2 — duplicates Loop 2 CP1 (IRM_ID)
+    tagInsert3.run('L3_IR4_AR_DET',    getNode('IR4_AR_DET'),    'Boolean', 'read',      'L3 CP3 IRM detect (addr shared w/ L2 CP1)');
+    tagInsert3.run('L3_RS232_2_BYTE2', getNode('RS232_2_BYTE2'), 'Int32',   'read',      'L3 CP3 shuttle ID reader (addr shared w/ L2 CP1)');
+    tagInsert3.run('L3_IR4_AR_GO',     getNode('IR4_AR_GO'),     'Boolean', 'readwrite', 'L3 CP3 IRM go signal (addr shared w/ L2 CP1)');
+    // seq 3 — duplicates Loop 1 CP2 (SENSOR)
+    tagInsert3.run('L3_ARENA2_SIGNOFF', getNode('ARENA2_SIGNOFF'), 'Boolean', 'read', 'L3 CP4 positioning sensor (addr shared w/ L1 CP2)');
+
+    const getTag3 = (name: string): number =>
+      (db.prepare('SELECT id FROM tags WHERE logical_name = ?').get(name) as { id: number }).id;
+
+    db.prepare(
+      'INSERT INTO loops (name, description, allowed_shuttle_ids) VALUES (?, ?, ?)',
+    ).run('Loop 3', 'Crossover loop spanning both arenas (shuttle 255)', '[255]');
+    const loop3Id = (
+      db.prepare('SELECT id FROM loops WHERE name = ?').get('Loop 3') as { id: number }
+    ).id;
+
+    const cpInsert3 = db.prepare(
+      `INSERT INTO checkpoints
+         (loop_id, sequence, name, type, distance_mm_to_next, buffer_ms,
+          det_tag_id, id_tag_id, go_tag_id, signoff_tag_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    // seq 0 = Loop 1 CP1 mirror (IRM_ID)
+    cpInsert3.run(loop3Id, 0, 'CP1 — Arena IRM (ID) [L1]', 'IRM_ID', 5000, 10000,
+      getTag3('L3_IR3_AR_DET'), getTag3('L3_RS232_1_BYTE2'), getTag3('L3_IR3_AR_GO'), null);
+    // seq 1 = Loop 2 CP2 mirror (SENSOR)
+    cpInsert3.run(loop3Id, 1, 'CP2 — Arena Sensor [L2]', 'SENSOR', 5000, 10000,
+      null, null, null, getTag3('L3_L2_ARENA2_SIGNOFF'));
+    // seq 2 = Loop 2 CP1 mirror (IRM_ID)
+    cpInsert3.run(loop3Id, 2, 'CP3 — Arena IRM (ID) [L2]', 'IRM_ID', 5000, 10000,
+      getTag3('L3_IR4_AR_DET'), getTag3('L3_RS232_2_BYTE2'), getTag3('L3_IR4_AR_GO'), null);
+    // seq 3 = Loop 1 CP2 mirror (SENSOR)
+    cpInsert3.run(loop3Id, 3, 'CP4 — Arena Sensor [L1]', 'SENSOR', 5000, 10000,
+      null, null, null, getTag3('L3_ARENA2_SIGNOFF'));
   }
 }

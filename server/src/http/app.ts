@@ -10,9 +10,11 @@ import loopsRouter from './routes/loops';
 import checkpointsRouter from './routes/checkpoints';
 import { createOverrideRouter } from './routes/override';
 import { createSimRouter } from './routes/sim';
+import { createRecordingRouter } from './routes/recording';
 import type { PlcDriver } from '../opc/PlcDriver';
+import type { RecordingService } from '../recording/RecordingService';
 
-export function createApp(driver: PlcDriver): express.Application {
+export function createApp(driver: PlcDriver, recordingService: RecordingService, broadcastRecordingStatus: () => void): express.Application {
   const app = express();
 
   app.use(express.json());
@@ -40,8 +42,9 @@ export function createApp(driver: PlcDriver): express.Application {
   app.use('/api/events',   requireAuth, eventsRouter);
   app.use('/api/loops',       requireAuth, loopsRouter);
   app.use('/api/checkpoints', requireAuth, checkpointsRouter);
-  app.use('/api/override', requireAuth, createOverrideRouter(driver));
-  app.use('/api/sim',      requireAuth, createSimRouter(driver));
+  app.use('/api/override',   requireAuth, createOverrideRouter(driver));
+  app.use('/api/sim',        requireAuth, createSimRouter(driver));
+  app.use('/api/recording',  requireAuth, createRecordingRouter(recordingService, broadcastRecordingStatus));
 
   // ── Static client files ───────────────────────────────────────────────────
   const clientDist = path.join(__dirname, '..', '..', 'public');

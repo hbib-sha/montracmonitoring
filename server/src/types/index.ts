@@ -107,6 +107,74 @@ export interface CrashEvent {
   createdAt: string;    // ISO timestamp
   resolvedAt?: string;
   acknowledged: boolean;
+  runId?: number;
+}
+
+// ─── Recording types ──────────────────────────────────────────────────────────
+
+export type RecordingStatus = 'recording' | 'stopped';
+
+export interface RecordingRun {
+  id: number;
+  name: string;
+  startedAt: string;      // ISO timestamp
+  endedAt?: string;
+  status: RecordingStatus;
+  mode: PlcMode;
+  sampleIntervalMs: number;
+  notes: string;
+  sampleCount?: number;   // aggregate (populated by getRun)
+  segmentCount?: number;
+  crashMarkerCount?: number;
+}
+
+export interface RecordingSample {
+  id: number;
+  runId: number;
+  t: number;              // epoch ms
+  connected: boolean;
+  mode: PlcMode;
+  activeShuttleCount: number;
+  crashedCount: number;
+  snapshotJson: string;   // JSON-serialised SystemState
+}
+
+export interface SegmentTiming {
+  id: number;
+  runId: number;
+  loopId: number;
+  shuttleId: number;
+  fromIndex: number;
+  toIndex: number;
+  predictedEtaMs: number;
+  actualElapsedMs: number;
+  recordedAt: string;
+}
+
+export interface CrashMarker {
+  id: number;
+  runId: number;
+  loopId: number;
+  actualCrashAtMs: number;
+  detectedEventId?: number;
+  detectedAtMs?: number;
+  detectionLatencyMs?: number;
+  note: string;
+  createdAt: string;
+}
+
+export interface RecordingStatusInfo {
+  active: boolean;
+  run: RecordingRun | null;
+}
+
+export interface ShuttleAdvancedPayload {
+  loopId: number;
+  shuttleId: number;
+  fromIndex: number;
+  toIndex: number;
+  predictedEtaMs: number;
+  actualElapsedMs: number;
 }
 
 // ─── WebSocket event payloads (also imported by client) ───────────────────────

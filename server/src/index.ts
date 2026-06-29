@@ -2,16 +2,17 @@
  * Montrac Monitoring System — Server entry point
  *
  * Boot sequence:
- *  1. Initialise SQLite database (schema + seed)
- *  2. Load settings from DB
- *  3. Create PLC driver (real or simulation)
- *  4. Connect to PLC / initialise sim
- *  5. Run startup tag-readability check
- *  6. Start monitoring engine
- *  7. Start alarm manager (light tower, push button poll)
- *  8. Create Express app + HTTP server
- *  9. Create Socket.IO gateway
- * 10. Start listening
+ *  1.  Initialise SQLite database (schema + seed)
+ *  2.  Load settings from DB
+ *  3.  Create PLC driver (real or simulation)
+ *  4.  Connect to PLC / initialise sim
+ *  5.  Run startup tag-readability check
+ *  6.  Start monitoring engine
+ *  7.  Start alarm manager (light tower, push button poll)
+ *  8.  Create recording service
+ *  9.  Create Express app + HTTP server
+ *  10. Create Socket.IO gateway
+ *  11. Start listening
  */
 import http from 'http';
 import pino from 'pino';
@@ -23,10 +24,12 @@ import { OpcUaDriver } from './opc/OpcUaDriver';
 import { SimulatedDriver } from './opc/SimulatedDriver';
 import { MonitoringEngine } from './monitoring/MonitoringEngine';
 import { AlarmManager } from './alarm/AlarmManager';
+import { RecordingService } from './recording/RecordingService';
 import { createApp } from './http/app';
 import { createGateway } from './ws/gateway';
 import { config as envConfig } from './config/env';
 import type { PlcDriver } from './opc/PlcDriver';
+import type { SystemState } from './types';
 
 const logger = pino(pretty({ colorize: true }));
 logger.info('=== Montrac Monitoring System booting ===');
@@ -61,22 +64,40 @@ const engine = new MonitoringEngine(
 
 // ─── 6. Alarm Manager ────────────────────────────────────────────────────────
 const alarmManager = new AlarmManager(driver, {
-  alarmAutoOffMs:   settings.alarmAutoOffMs,
-  lightTowerNodeId: settings.lightTowerNodeId,
-  buzzerNodeId:     settings.buzzerNodeId,
+  alarmAutoOffMs:    settings.alarmAutoOffMs,
+  lightTowerNodeId:  settings.lightTowerNodeId,
+  buzzerNodeId:      settings.buzzerNodeId,
   pushButton1NodeId: settings.pushButton1NodeId,
   lightTowerBlinkMs: envConfig.lightTowerBlinkMs,
 });
 
-// ─── 7. Express + HTTP ───────────────────────────────────────────────────────
-const app        = createApp(driver);
-const httpServer = http.createServer(app);
-
-// ─── 8. Tag check results (shared state) ─────────────────────────────────────
+// ─── 7. Tag check results (shared mutable state) ─────────────────────────────
 const tagCheckResults: Record<string, boolean> = {};
 
-// ─── 9. Socket.IO Gateway ────────────────────────────────────────────────────
-createGateway(
+// ─── 8. Recording Service ────────────────────────────────────────────────────
+// buildSystemState mirrors gateway.ts — both use the same live references.
+function buildSystemState(): SystemState {
+  return {
+    mode:            settings.mode,
+    connected:       driver.isConnected,
+    tagCheckResults: { ...tagCheckResults },
+    loops:           engine.getLoops().map((l) => l.toState()),
+    alarm:           alarmManager.getState(),
+  };
+}
+
+// Mutable broadcast stub — replaced once the gateway is created.
+// The app captures it via a closure so the real function is always called.
+let broadcastRecordingStatus: () => void = () => {};
+
+const recordingService = new RecordingService(engine, buildSystemState);
+
+// ─── 9. Express + HTTP ───────────────────────────────────────────────────────
+const app        = createApp(driver, recordingService, () => broadcastRecordingStatus());
+const httpServer = http.createServer(app);
+
+// ─── 10. Socket.IO Gateway ───────────────────────────────────────────────────
+const { broadcastRecordingStatus: gatewayBroadcast } = createGateway(
   httpServer,
   engine,
   alarmManager,
@@ -84,9 +105,13 @@ createGateway(
   () => settings.mode,
   () => driver.isConnected,
   () => ({ ...tagCheckResults }),
+  recordingService,
 );
 
-// ─── 10. Boot sequence ────────────────────────────────────────────────────────
+// Wire up the real broadcast now that the gateway (and io) exist
+broadcastRecordingStatus = gatewayBroadcast;
+
+// ─── 11. Boot sequence ────────────────────────────────────────────────────────
 async function boot(): Promise<void> {
   try {
     logger.info('Connecting to PLC driver...');
@@ -131,6 +156,7 @@ async function boot(): Promise<void> {
 // Graceful shutdown
 process.on('SIGINT', async () => {
   logger.info('Shutting down...');
+  recordingService.stop();
   alarmManager.stopAll();
   engine.stop();
   await driver.dispose();

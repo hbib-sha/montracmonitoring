@@ -2,7 +2,7 @@
  * Typed Socket.IO event names and payload contracts.
  * Imported by both server (gateway.ts) and client (socket.ts).
  */
-import type { SystemState, AlarmInfo } from '../types';
+import type { SystemState, AlarmInfo, RecordingStatusInfo } from '../types';
 
 // Server → Client
 export interface ServerToClientEvents {
@@ -12,6 +12,8 @@ export interface ServerToClientEvents {
   alarmUpdate: (info: AlarmInfo) => void;
   /** Simulated tag values map (sim mode only). */
   simTags: (tags: Record<string, boolean | number | string>) => void;
+  /** Recording run status — sent when recording starts or stops. */
+  recordingStatus: (info: RecordingStatusInfo) => void;
 }
 
 // Client → Server
