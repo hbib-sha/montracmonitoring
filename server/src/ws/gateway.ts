@@ -17,6 +17,7 @@ import { SimulatedDriver } from '../opc/SimulatedDriver';
 import { tagRegistry } from '../opc/tagRegistry';
 import { eventRepo } from '../db/repositories/eventRepo';
 import type { RecordingService } from '../recording/RecordingService';
+import type { CalibrationService } from '../calibration/CalibrationService';
 import type { SystemState, PlcMode } from '../types';
 import pino from 'pino';
 
@@ -38,6 +39,7 @@ export function createGateway(
   isConnected: () => boolean,
   tagCheckResults: () => Record<string, boolean>,
   recordingService: RecordingService,
+  calibrationService: CalibrationService,
 ): { io: IoType; broadcastRecordingStatus: () => void } {
   const io: IoType = new IoServer(httpServer, {
     cors: { origin: '*', methods: ['GET', 'POST'] },
@@ -66,6 +68,10 @@ export function createGateway(
     io.emit('recordingStatus', recordingService.getStatus());
   }
 
+  function broadcastCalibrationStatus(): void {
+    io.emit('calibrationStatus', calibrationService.getStatus());
+  }
+
   // ── Engine / alarm event wiring ─────────────────────────────────────────
   engine.on('stateChanged', broadcastState);
 
@@ -78,7 +84,11 @@ export function createGateway(
 
   engine.on('shuttleAdvanced', (payload) => {
     recordingService.onShuttleAdvanced(payload);
+    calibrationService.onShuttleAdvanced(payload);
   });
+
+  // Re-broadcast calibration progress whenever the session state changes.
+  calibrationService.on('statusChanged', broadcastCalibrationStatus);
 
   alarmManager.on('alarmChanged', () => {
     broadcastAlarm();
@@ -99,6 +109,7 @@ export function createGateway(
     // Send full state immediately
     socket.emit('systemState', buildSystemState());
     socket.emit('recordingStatus', recordingService.getStatus());
+    socket.emit('calibrationStatus', calibrationService.getStatus());
     if (driver instanceof SimulatedDriver) {
       socket.emit('simTags', driver.getAll());
     }

@@ -25,6 +25,7 @@ import { SimulatedDriver } from './opc/SimulatedDriver';
 import { MonitoringEngine } from './monitoring/MonitoringEngine';
 import { AlarmManager } from './alarm/AlarmManager';
 import { RecordingService } from './recording/RecordingService';
+import { CalibrationService } from './calibration/CalibrationService';
 import { createApp } from './http/app';
 import { createGateway } from './ws/gateway';
 import { config as envConfig } from './config/env';
@@ -92,8 +93,15 @@ let broadcastRecordingStatus: () => void = () => {};
 
 const recordingService = new RecordingService(engine, buildSystemState);
 
+// ─── 8b. Calibration Service ─────────────────────────────────────────────────
+// Reads avg speed fresh from the DB so calibration and engine.reload() agree.
+const calibrationService = new CalibrationService(
+  engine,
+  () => settingsRepo.getAll().avgSpeedMmPerSec,
+);
+
 // ─── 9. Express + HTTP ───────────────────────────────────────────────────────
-const app        = createApp(driver, recordingService, () => broadcastRecordingStatus());
+const app        = createApp(driver, recordingService, () => broadcastRecordingStatus(), calibrationService);
 const httpServer = http.createServer(app);
 
 // ─── 10. Socket.IO Gateway ───────────────────────────────────────────────────
@@ -106,6 +114,7 @@ const { broadcastRecordingStatus: gatewayBroadcast } = createGateway(
   () => driver.isConnected,
   () => ({ ...tagCheckResults }),
   recordingService,
+  calibrationService,
 );
 
 // Wire up the real broadcast now that the gateway (and io) exist

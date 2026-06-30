@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSettings } from '../store/useSettings';
+import { useLiveState } from '../store/useLiveState';
+import { useCalibration } from '../store/useCalibration';
 import type { Settings, TagDef } from '../../../server/src/types';
 
 interface LoopConfig {
@@ -308,6 +310,10 @@ export default function SettingsPage() {
                 ETA (ms) = Distance ÷ Avg Speed × 1000. Crash fires if shuttle hasn't arrived within ETA + Buffer.
               </p>
             )}
+
+            {cps.length > 0 && (
+              <LoopCalibration loopId={loop.id} loopName={loop.name} onApplied={fetchCheckpoints} />
+            )}
           </section>
         ))}
 
@@ -373,6 +379,157 @@ export default function SettingsPage() {
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+function LoopCalibration({
+  loopId,
+  loopName,
+  onApplied,
+}: {
+  loopId: number;
+  loopName: string;
+  onApplied: () => void;
+}) {
+  const mode = useLiveState((s) => s.system?.mode);
+  const cal  = useLiveState((s) => s.calibrationStatus);
+  const {
+    proposal, fetchProposal, start, stop, apply,
+    applying, loadingProposal, error, clear,
+  } = useCalibration();
+
+  const isReal      = mode === 'real';
+  const thisLoop    = cal.loopId === loopId;
+  const collecting  = thisLoop && cal.active && !cal.complete;
+  const reviewing   = thisLoop && cal.complete;
+  const otherActive = cal.active && cal.loopId !== loopId;
+
+  // Fetch the before/after proposal once this loop's calibration completes.
+  useEffect(() => {
+    if (reviewing && !proposal && !loadingProposal) {
+      fetchProposal(loopId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewing, loopId]);
+
+  const handleApply = async () => {
+    if (await apply(loopId)) onApplied();
+  };
+
+  const handleCancel = async () => {
+    await stop();
+    clear();
+  };
+
+  return (
+    <div className="rounded-lg border border-line bg-surface p-3 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold text-ink uppercase tracking-wide">
+            Auto-calibrate distances
+          </p>
+          <p className="text-xs text-ink-faint">
+            Run one shuttle {cal.targetRuns} laps of {loopName}; measured travel times set the
+            distances and a 3&nbsp;s crash buffer.
+          </p>
+        </div>
+        {!collecting && !reviewing && (
+          <button
+            disabled={!isReal || otherActive}
+            onClick={() => start(loopId)}
+            className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            Start calibration
+          </button>
+        )}
+        {collecting && (
+          <button
+            onClick={stop}
+            className="shrink-0 rounded-lg border border-line bg-white px-4 py-2 text-xs font-semibold text-ink hover:bg-surface transition-colors"
+          >
+            Stop
+          </button>
+        )}
+      </div>
+
+      {!isReal && (
+        <p className="text-xs text-amber-600">Available in real (OPC&nbsp;UA) mode only.</p>
+      )}
+      {isReal && otherActive && (
+        <p className="text-xs text-amber-600">Calibration is running on another loop.</p>
+      )}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+
+      {/* Live per-segment progress */}
+      {(collecting || reviewing) && cal.segments.length > 0 && (
+        <div className="space-y-1">
+          {cal.segments.map((seg) => (
+            <div key={seg.fromIndex} className="flex items-center gap-2 text-xs">
+              <span className="w-44 truncate text-ink-muted">{seg.cpName} →</span>
+              <span className="font-mono text-ink-faint">
+                {seg.count}/{cal.targetRuns}
+              </span>
+              {seg.avgMs != null && (
+                <span className="font-mono text-ink-muted">avg {(seg.avgMs / 1000).toFixed(1)}s</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Review before/after, then apply */}
+      {reviewing && (
+        <div className="space-y-2">
+          {loadingProposal && <p className="text-xs text-ink-faint">Computing proposal…</p>}
+          {proposal && proposal.length > 0 && (
+            <>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-line text-ink-faint">
+                    <th className="text-left py-1 pr-3 font-semibold">Checkpoint</th>
+                    <th className="text-right py-1 pr-3 font-semibold">Avg time</th>
+                    <th className="text-right py-1 pr-3 font-semibold">Current (mm)</th>
+                    <th className="text-right py-1 font-semibold">Proposed (mm)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {proposal.map((row) => (
+                    <tr key={row.cpId} className="border-b border-line last:border-0">
+                      <td className="py-1 pr-3 text-ink">{row.cpName}</td>
+                      <td className="py-1 pr-3 text-right font-mono text-ink-muted">
+                        {(row.avgMs / 1000).toFixed(1)}s
+                      </td>
+                      <td className="py-1 pr-3 text-right font-mono text-ink-faint">
+                        {row.currentDistanceMm}
+                      </td>
+                      <td className="py-1 text-right font-mono font-semibold text-blue-600">
+                        {row.proposedDistanceMm}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="text-xs text-ink-faint">
+                Applying writes these distances, sets every crash buffer to 3&nbsp;s, and reloads the
+                engine (virtual shuttles respawn on next detection).
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleApply}
+                  disabled={applying}
+                  className="rounded-lg bg-green-600 px-4 py-2 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-40 transition-colors"
+                >
+                  {applying ? 'Applying…' : 'Apply & Save'}
+                </button>
+                <button onClick={handleCancel} className="text-xs text-ink-muted hover:text-ink">
+                  Cancel
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
