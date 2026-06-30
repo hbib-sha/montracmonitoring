@@ -177,6 +177,38 @@ export interface ShuttleAdvancedPayload {
   actualElapsedMs: number;
 }
 
+// ─── Calibration types ──────────────────────────────────────────────────────────
+
+/** Live progress of one segment during a calibration session. */
+export interface CalibrationSegmentStatus {
+  fromIndex: number;       // checkpoint index the segment departs from
+  toIndex: number;         // checkpoint index it arrives at
+  cpId: number;            // id of the departing checkpoint (owns distanceMmToNext)
+  cpName: string;
+  count: number;           // samples collected so far (0..targetRuns)
+  avgMs: number | null;    // running average travel time, null until first sample
+}
+
+/** Status of the calibration session — broadcast over the socket. */
+export interface CalibrationStatusInfo {
+  active: boolean;
+  loopId: number | null;
+  targetRuns: number;      // laps required per segment (3)
+  complete: boolean;       // every segment has targetRuns samples
+  segments: CalibrationSegmentStatus[];
+}
+
+/** One row of the before/after proposal shown for review. */
+export interface CalibrationProposalRow {
+  cpId: number;
+  cpName: string;
+  fromIndex: number;
+  currentDistanceMm: number;
+  proposedDistanceMm: number;
+  avgMs: number;
+  sampleCount: number;
+}
+
 // ─── WebSocket event payloads (also imported by client) ───────────────────────
 export interface WsServerToClientEvents {
   systemState: (state: SystemState) => void;

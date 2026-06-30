@@ -11,10 +11,17 @@ import checkpointsRouter from './routes/checkpoints';
 import { createOverrideRouter } from './routes/override';
 import { createSimRouter } from './routes/sim';
 import { createRecordingRouter } from './routes/recording';
+import { createCalibrationRouter } from './routes/calibration';
 import type { PlcDriver } from '../opc/PlcDriver';
 import type { RecordingService } from '../recording/RecordingService';
+import type { CalibrationService } from '../calibration/CalibrationService';
 
-export function createApp(driver: PlcDriver, recordingService: RecordingService, broadcastRecordingStatus: () => void): express.Application {
+export function createApp(
+  driver: PlcDriver,
+  recordingService: RecordingService,
+  broadcastRecordingStatus: () => void,
+  calibrationService: CalibrationService,
+): express.Application {
   const app = express();
 
   app.use(express.json());
@@ -45,6 +52,7 @@ export function createApp(driver: PlcDriver, recordingService: RecordingService,
   app.use('/api/override',   requireAuth, createOverrideRouter(driver));
   app.use('/api/sim',        requireAuth, createSimRouter(driver));
   app.use('/api/recording',  requireAuth, createRecordingRouter(recordingService, broadcastRecordingStatus));
+  app.use('/api/calibration', requireAuth, createCalibrationRouter(calibrationService));
 
   // ── Static client files ───────────────────────────────────────────────────
   const clientDist = path.join(__dirname, '..', '..', 'public');

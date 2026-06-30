@@ -8,6 +8,8 @@ import type {
   SegmentTiming,
   CrashMarker,
   RecordingStatusInfo,
+  CalibrationStatusInfo,
+  CalibrationProposalRow,
 } from '../../../server/src/types';
 
 async function request<T>(
@@ -101,6 +103,28 @@ export const recordingApi = {
     request<{ success: boolean }>('/api/recording/runs', { method: 'DELETE' }),
   exportUrl: (id: number, format: 'csv' | 'json') =>
     `/api/recording/runs/${id}/export?format=${format}`,
+};
+
+// ── Calibration ───────────────────────────────────────────────────────────────
+export const calibrationApi = {
+  status: () =>
+    request<CalibrationStatusInfo>('/api/calibration/status'),
+  start: (loopId: number) =>
+    request<{ success: boolean; status: CalibrationStatusInfo }>('/api/calibration/start', {
+      method: 'POST',
+      body: JSON.stringify({ loopId }),
+    }),
+  stop: () =>
+    request<{ success: boolean; status: CalibrationStatusInfo }>('/api/calibration/stop', {
+      method: 'POST',
+    }),
+  propose: (loopId: number) =>
+    request<CalibrationProposalRow[]>(`/api/calibration/propose?loopId=${loopId}`),
+  apply: (loopId: number, distances?: Record<number, number>) =>
+    request<{ success: boolean; applied: CalibrationProposalRow[] }>('/api/calibration/apply', {
+      method: 'POST',
+      body: JSON.stringify({ loopId, distances }),
+    }),
 };
 
 // ── Sim ───────────────────────────────────────────────────────────────────────
