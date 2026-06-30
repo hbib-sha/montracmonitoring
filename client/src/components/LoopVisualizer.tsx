@@ -7,9 +7,21 @@
  * Animation: uses requestAnimationFrame to interpolate moving shuttles
  * at ~15 fps so markers visibly travel along the arc between ticks.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { LoopState, VirtualShuttleState } from '../../../server/src/types';
 import { socket } from '../lib/socket';
+import {
+  loopGeometry,
+  validateLoopGeo,
+  TRACK_VIEWBOX,
+  type LoopGeometry,
+} from '../loopGeometry';
+import {
+  pointAtT,
+  tangentAtT,
+  shuttleTValue,
+  crashPolylinePoints,
+} from '../lib/trackGeometry';
 
 interface Props {
   loop: LoopState;
@@ -55,6 +67,151 @@ function shuttlePosition(
   if (dAngle < 0) dAngle += 2 * Math.PI;
   const angle = fromAngle + dAngle * progress;
   return { x: CX + RX * Math.cos(angle), y: CY + RY * Math.sin(angle) };
+}
+
+// ── Geometry-mode constants (authored-shape rendering) ──────────────────────
+const GEO_CP_R       = 16;  // checkpoint circle radius in TRACK_VIEWBOX units
+const GEO_PARK_OFFSET = 26; // perpendicular offset for stopped/crashed shuttles
+const GEO_PAD        = 42;  // viewBox padding around the path bounding box
+
+/**
+ * GeometryTrack — renders the loop along its authored SVG path (loopGeometry).
+ * Drop-in replacement for the ellipse <svg> when geometry exists for this loop.
+ * Reuses the same monitoring palette (neutral track, green/red checkpoints,
+ * blue/amber/red shuttles) as the ellipse view — only the shape changes.
+ */
+function GeometryTrack({
+  loop,
+  geo,
+  tick,
+}: {
+  loop: LoopState;
+  geo: LoopGeometry;
+  tick: number;
+}) {
+  const { checkpoints, shuttles, crashedSegments } = loop;
+  const n = checkpoints.length;
+  const cpTs = geo.checkpoints.map((c) => c.t);
+
+  const pathRef = useRef<SVGPathElement | null>(null);
+  const [L, setL] = useState(0);
+  const [viewBox, setViewBox] = useState(
+    `${TRACK_VIEWBOX.x} ${TRACK_VIEWBOX.y} ${TRACK_VIEWBOX.w} ${TRACK_VIEWBOX.h}`,
+  );
+
+  // After the path mounts, measure its length and fit the viewBox to its bbox.
+  useLayoutEffect(() => {
+    const path = pathRef.current;
+    if (!path) return;
+    setL(path.getTotalLength());
+    const bb = path.getBBox();
+    setViewBox(
+      `${bb.x - GEO_PAD} ${bb.y - GEO_PAD} ${bb.width + GEO_PAD * 2} ${bb.height + GEO_PAD * 2}`,
+    );
+  }, [geo.d]);
+
+  void tick; // prop bump forces re-render at animation rate
+
+  const point = (t: number) =>
+    pathRef.current && L > 0 ? pointAtT(pathRef.current, t, L) : { x: 0, y: 0 };
+
+  const normalAt = (t: number) => {
+    if (!pathRef.current || L === 0) return { x: 0, y: 1 };
+    const tg = tangentAtT(pathRef.current, t, L);
+    return { x: -tg.y, y: tg.x }; // 90° CW
+  };
+
+  const shuttlePos = (s: VirtualShuttleState) => {
+    const fromT = cpTs[s.checkpointIndex];
+    const toT   = cpTs[(s.checkpointIndex + 1) % n];
+    if (s.status === 'moving' && s.movedAtMs && s.etaMs) {
+      const progress = Math.min(1, (Date.now() - s.movedAtMs) / s.etaMs);
+      return point(shuttleTValue(fromT, toT, progress));
+    }
+    const base = point(fromT);
+    const nor  = normalAt(fromT);
+    return { x: base.x + nor.x * GEO_PARK_OFFSET, y: base.y + nor.y * GEO_PARK_OFFSET };
+  };
+
+  return (
+    <svg viewBox={viewBox} className="w-full" style={{ maxHeight: 260 }}>
+      {/* Track path */}
+      <path
+        ref={pathRef}
+        d={geo.d}
+        fill="none"
+        stroke={TRACK_NORMAL}
+        strokeWidth={4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* Crash segment overlays */}
+      {L > 0 && pathRef.current && crashedSegments.map((seg) => {
+        const pts = crashPolylinePoints(
+          pathRef.current!, L, cpTs[seg.fromIndex], cpTs[seg.toIndex],
+        );
+        return (
+          <g key={`crash-${seg.fromIndex}-${seg.toIndex}`}>
+            <polyline points={pts} fill="none" stroke={TRACK_CRASH}
+              strokeWidth={6} strokeLinecap="round" />
+            <polyline points={pts} fill="none" stroke={TRACK_CRASH}
+              strokeWidth={12} strokeLinecap="round" opacity={0.25} />
+          </g>
+        );
+      })}
+
+      {/* Checkpoint circles */}
+      {L > 0 && checkpoints.map((cp, i) => {
+        const { x, y }    = point(cpTs[i]);
+        const isCrashFrom = crashedSegments.some((s) => s.fromIndex === i);
+        const isCrashTo   = crashedSegments.some((s) => s.toIndex   === i);
+        const highlight   = isCrashFrom || isCrashTo;
+        const strokeColor = highlight ? CP_CRASH : cp.detecting ? CP_DETECT : CP_STROKE;
+        const textColor   = highlight ? TEXT_CRASH : cp.detecting ? TEXT_DETECT : TEXT_NORMAL;
+        return (
+          <g key={cp.id}>
+            {cp.detecting && (
+              <circle cx={x} cy={y} r={GEO_CP_R + 7} fill="none"
+                stroke={CP_DETECT} strokeWidth={2} opacity={0.35} />
+            )}
+            <circle cx={x} cy={y} r={GEO_CP_R}
+              fill={highlight ? '#fef2f2' : CP_FILL} stroke={strokeColor} strokeWidth={2} />
+            <text x={x} y={y - 2} textAnchor="middle" dominantBaseline="middle"
+              fontSize="10" fontWeight="bold" fill={textColor}>
+              {i + 1}
+            </text>
+            <text x={x} y={y + 8} textAnchor="middle" dominantBaseline="middle"
+              fontSize="5.5" fill={highlight ? TEXT_CRASH : '#94a3b8'}>
+              {cp.type}
+            </text>
+            <text x={x} y={y + GEO_CP_R + 11} textAnchor="middle"
+              fontSize="7" fill={highlight ? TEXT_CRASH : TEXT_NORMAL}>
+              {cp.name.split('—')[0].trim()}
+            </text>
+          </g>
+        );
+      })}
+
+      {/* Virtual shuttles */}
+      {L > 0 && shuttles.map((s) => {
+        const pos = shuttlePos(s);
+        const color =
+          s.status === 'crashed' ? SHUTTLE_DEAD
+          : s.status === 'stopped' ? SHUTTLE_STOP
+          : SHUTTLE_MOVE;
+        return (
+          <g key={s.id}>
+            <circle cx={pos.x} cy={pos.y} r={9} fill={color} opacity={0.9} />
+            <text x={pos.x} y={pos.y + 1} textAnchor="middle" dominantBaseline="middle"
+              fontSize="7" fontWeight="bold" fill="#ffffff">
+              {s.id}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
 }
 
 function ShuttleMarker({
@@ -145,6 +302,10 @@ export default function LoopVisualizer({ loop }: Props) {
 
   if (n === 0) return null;
 
+  // If this loop has authored geometry, render along its real shape.
+  const geo    = loopGeometry[loop.id];
+  const useGeo = !!geo && validateLoopGeo(geo, n, loop.id);
+
   const positions = checkpoints.map((_, i) => cpPosition(i, n));
 
   const segmentPath = (fromIdx: number, toIdx: number): string => {
@@ -182,6 +343,9 @@ export default function LoopVisualizer({ loop }: Props) {
         </div>
       </div>
 
+      {useGeo && geo ? (
+        <GeometryTrack loop={loop} geo={geo} tick={tick} />
+      ) : (
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 230 }}>
         {/* Track segments */}
         {checkpoints.map((_, i) => {
@@ -272,6 +436,7 @@ export default function LoopVisualizer({ loop }: Props) {
           <ShuttleMarker key={s.id} shuttle={s} total={n} tick={tick} />
         ))}
       </svg>
+      )}
 
       {/* Shuttle legend */}
       {shuttles.length > 0 && (
