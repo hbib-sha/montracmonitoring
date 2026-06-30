@@ -177,6 +177,18 @@ export interface ShuttleAdvancedPayload {
   actualElapsedMs: number;
 }
 
+/**
+ * Emitted when an arrival clears a previously-crashed segment — i.e. a delayed
+ * shuttle recovered. `remainingCrashes` is how many crashed segments are still
+ * left in that loop after this one cleared (0 = loop fully recovered).
+ */
+export interface SegmentRecoveredPayload {
+  loopId: number;
+  fromIndex: number;
+  toIndex: number;
+  remainingCrashes: number;
+}
+
 // ─── Calibration types ──────────────────────────────────────────────────────────
 
 /** Live progress of one segment during a calibration session. */

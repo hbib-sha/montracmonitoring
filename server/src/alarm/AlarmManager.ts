@@ -9,7 +9,7 @@
  */
 import { EventEmitter } from 'events';
 import type { PlcDriver } from '../opc/PlcDriver';
-import type { AlarmInfo, AlarmState } from '../types';
+import type { AlarmInfo, AlarmState, SegmentRecoveredPayload } from '../types';
 import type { CrashPayload } from '../monitoring/crashDetection';
 import pino from 'pino';
 
@@ -127,6 +127,20 @@ export class AlarmManager extends EventEmitter {
     if (this.alarm.state !== 'active') return;
     this.clearAlarm();
     logger.info('Alarm acknowledged');
+  }
+
+  /**
+   * Auto-clear the alarm when a delayed shuttle recovers (false alarm).
+   * Only clears if the active alarm is for the recovered loop AND that loop has
+   * no crashed segments left — so a multi-crash loop keeps alarming until the
+   * last segment resolves.
+   */
+  onRecovery(payload: SegmentRecoveredPayload): void {
+    if (this.alarm.state !== 'active') return;
+    if (this.alarm.loopId !== payload.loopId) return;
+    if (payload.remainingCrashes > 0) return;
+    logger.info({ loopId: payload.loopId }, 'Alarm auto-cleared — shuttle recovered (false alarm)');
+    this.clearAlarm();
   }
 
   getState(): AlarmInfo {

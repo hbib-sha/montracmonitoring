@@ -12,7 +12,7 @@
  *    so they don't remain stuck as "moving".
  */
 import { EventEmitter } from 'events';
-import type { LoopDef, LoopState, SegmentCrash, ShuttleAdvancedPayload } from '../types';
+import type { LoopDef, LoopState, SegmentCrash, ShuttleAdvancedPayload, SegmentRecoveredPayload } from '../types';
 import { Checkpoint } from './Checkpoint';
 import { VirtualShuttle } from './VirtualShuttle';
 import { CrashDetector, type CrashPayload } from './crashDetection';
@@ -25,6 +25,7 @@ export declare interface Loop {
   on(event: 'crash', listener: (payload: CrashPayload) => void): this;
   on(event: 'shuttleUpdate', listener: (payload: ShuttleUpdatePayload) => void): this;
   on(event: 'shuttleAdvanced', listener: (payload: ShuttleAdvancedPayload) => void): this;
+  on(event: 'recovered', listener: (payload: SegmentRecoveredPayload) => void): this;
 }
 
 export class Loop extends EventEmitter {
@@ -332,9 +333,23 @@ export class Loop extends EventEmitter {
   }
 
   private removeCrashSegment(fromIdx: number, toIdx: number): void {
+    const wasCrashed = this.crashedSegments.some(
+      (s) => s.fromIndex === fromIdx && s.toIndex === toIdx,
+    );
     this.crashedSegments = this.crashedSegments.filter(
       (s) => !(s.fromIndex === fromIdx && s.toIndex === toIdx),
     );
+    // A previously-crashed segment just cleared because the shuttle arrived —
+    // this was a recovery (a delayed shuttle, not a real crash). Signal it so
+    // the alarm can auto-clear if nothing else in the loop is still crashed.
+    if (wasCrashed) {
+      this.emit('recovered', {
+        loopId:           this.id,
+        fromIndex:        fromIdx,
+        toIndex:          toIdx,
+        remainingCrashes: this.crashedSegments.length,
+      });
+    }
   }
 
   private findShuttleAt(cpIdx: number): VirtualShuttle | undefined {

@@ -55,4 +55,12 @@ export const eventRepo = {
        WHERE acknowledged = 0`,
     ).run();
   },
+
+  /** Resolve the open crash event(s) for a specific segment (auto-recovery). */
+  resolveOpenSegment(loopId: number, segmentFrom: number, segmentTo: number): void {
+    db.prepare(
+      `UPDATE events SET acknowledged = 1, resolved_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+       WHERE acknowledged = 0 AND loop_id = ? AND segment_from = ? AND segment_to = ?`,
+    ).run(loopId, segmentFrom, segmentTo);
+  },
 };

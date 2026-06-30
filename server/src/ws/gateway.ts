@@ -87,6 +87,15 @@ export function createGateway(
     calibrationService.onShuttleAdvanced(payload);
   });
 
+  // A delayed shuttle arrived and cleared its crashed segment — auto-clear the
+  // alarm (false alarm) and resolve the logged event. The alarm's own
+  // 'alarmChanged' emit handles broadcasting when it actually clears.
+  engine.on('recovered', (payload) => {
+    alarmManager.onRecovery(payload);
+    eventRepo.resolveOpenSegment(payload.loopId, payload.fromIndex, payload.toIndex);
+    broadcastState();
+  });
+
   // Re-broadcast calibration progress whenever the session state changes.
   calibrationService.on('statusChanged', broadcastCalibrationStatus);
 

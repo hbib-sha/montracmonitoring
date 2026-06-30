@@ -12,7 +12,7 @@ import { db } from '../db/index';
 import { Loop } from './Loop';
 import type { LoopDef, CheckpointDef } from '../types';
 import type { CrashPayload } from './crashDetection';
-import type { ShuttleAdvancedPayload } from '../types';
+import type { ShuttleAdvancedPayload, SegmentRecoveredPayload } from '../types';
 import pino from 'pino';
 
 const logger = pino({ name: 'MonitoringEngine' });
@@ -29,6 +29,7 @@ export declare interface MonitoringEngine {
   on(event: 'stateChanged', listener: () => void): this;
   on(event: 'crash', listener: (payload: CrashPayload) => void): this;
   on(event: 'shuttleAdvanced', listener: (payload: ShuttleAdvancedPayload) => void): this;
+  on(event: 'recovered', listener: (payload: SegmentRecoveredPayload) => void): this;
 }
 
 export class MonitoringEngine extends EventEmitter {
@@ -169,6 +170,9 @@ export class MonitoringEngine extends EventEmitter {
       });
       loop.on('shuttleAdvanced', (payload) => {
         this.emit('shuttleAdvanced', payload);
+      });
+      loop.on('recovered', (payload) => {
+        this.emit('recovered', payload);
       });
       loop.on('shuttleUpdate', () => {
         this.emit('stateChanged');
