@@ -216,11 +216,22 @@ export class Loop extends EventEmitter {
       this.emit('shuttleUpdate', { loopId: this.id });
 
     } else if (cp.type === 'IRM') {
-      // No ID — try the expected-queue first, then fall back to any shuttle
-      // in the loop. This ensures the virtual shuttle snaps to the real
-      // hardware position even when the queue is empty (e.g. after a crash
-      // acknowledge, or when the real shuttle arrived before the virtual one).
-      const shuttle = this.popExpectedShuttle(idx) ?? this.findAnyShuttleInLoop();
+      // No ID — match only a shuttle that is actually approaching THIS
+      // checkpoint from its immediate predecessor. We must NOT snap an
+      // arbitrary loop-wide shuttle here: loop 3 (and any loop with shared
+      // physical sensor addresses) sees this checkpoint fire when a *foreign*
+      // shuttle crosses the shared sensor. A loop-wide fallback would then
+      // teleport our shuttle (e.g. 255) here from wherever it was sitting.
+      //
+      // Candidates, in priority order — all constrained to prevIdx:
+      //   1. the queued shuttle that departed prevIdx (normal GO-driven case)
+      //   2. a shuttle currently moving from prevIdx
+      //   3. a shuttle still stopped at prevIdx (GO not read yet, or recovering
+      //      after a crash acknowledge / real shuttle moved before the virtual)
+      const shuttle =
+        this.popExpectedShuttle(idx) ??
+        this.findMovingShuttleFor(prevIdx) ??
+        this.findShuttleAt(prevIdx);
       if (shuttle) {
         // Emit timing data if the shuttle was moving toward this checkpoint
         if (shuttle.status === 'moving' && shuttle.movedAtMs != null && shuttle.etaMs != null) {
@@ -346,22 +357,6 @@ export class Loop extends EventEmitter {
     );
     if (idx === -1) return undefined;
     return this.movingShuttleQueue.splice(idx, 1)[0];
-  }
-
-  /**
-   * Fallback for IRM arrivals when no shuttle is in the moving queue.
-   * Returns the best candidate in the loop: prefers moving, then stopped,
-   * then crashed. Used to snap the virtual shuttle to the real hardware
-   * position when the queue is empty (e.g. after a crash acknowledge or
-   * when the real shuttle arrived before the virtual one).
-   */
-  private findAnyShuttleInLoop(): VirtualShuttle | undefined {
-    const all = [...this.shuttles.values()];
-    return (
-      all.find((s) => s.status === 'moving') ??
-      all.find((s) => s.status === 'stopped') ??
-      all[0]
-    );
   }
 
   toState(): LoopState {
