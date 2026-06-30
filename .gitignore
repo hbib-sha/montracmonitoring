@@ -8,3 +8,4 @@ client/dist/
 .env.local
 *.log
 prompt.txt
+analysis/charts/

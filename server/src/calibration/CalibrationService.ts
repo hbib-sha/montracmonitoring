@@ -25,8 +25,8 @@ import type {
 
 const logger = pino({ name: 'CalibrationService' });
 
-/** Crash buffer applied to calibrated checkpoints: ±3 seconds. */
-export const CALIBRATION_BUFFER_MS = 3000;
+/** Crash buffer applied to calibrated checkpoints: ±8 seconds. */
+export const CALIBRATION_BUFFER_MS = 8000;
 
 export declare interface CalibrationService {
   on(event: 'statusChanged', listener: () => void): this;
